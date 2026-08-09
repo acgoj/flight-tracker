@@ -1,0 +1,72 @@
+name: Monitorar precos Recife-Curitiba
+
+on:
+  schedule:
+    # 09:00 e 21:00 no horario de Brasilia (UTC-3) -> 12:00 e 00:00 UTC
+    - cron: '0 12 * * *'
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      quick:
+        description: 'Consultar so o par de datas padrao (mais rapido)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: track-prices
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Instalar navegador Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Rodar scraper
+        id: scrape
+        continue-on-error: true
+        run: |
+          if [ "${{ inputs.quick }}" = "true" ]; then
+            npm run scrape -- --quick
+          else
+            npm run scrape
+          fi
+
+      - name: Gerar dashboard
+        run: npm run build-dashboard
+
+      - name: Enviar artefatos de debug (se houve falha)
+        if: steps.scrape.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-scrape-${{ github.run_id }}
+          path: debug/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Commitar dados e dashboard atualizados
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add data/history.json docs/index.html
+          git diff --cached --quiet || git commit -m "chore: atualizar precos REC-CWB [skip ci]"
+          git push
+
+      - name: Marcar job como falho se o scraper falhou
+        if: steps.scrape.outcome == 'failure'
+        run: |
+          echo "::warning::O scraper falhou nesta execucao. Veja o artefato de debug e/ou registre um preco manualmente com 'npm run add-price'."
+          exit 1

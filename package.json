@@ -1,0 +1,16 @@
+{
+  "name": "flight-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Monitor de preco de passagens aereas (dinheiro e pontos) - Recife (REC) - Curitiba (CWB)",
+  "type": "commonjs",
+  "scripts": {
+    "scrape": "node scripts/run-scrape.js",
+    "add-price": "node scripts/add-price.js",
+    "build-dashboard": "node scripts/build-dashboard.js",
+    "test": "node test/run-tests.js"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

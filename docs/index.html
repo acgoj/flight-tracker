@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Recife → Curitiba: monitor de passagens</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #0f1216;
+    --card: #171b21;
+    --text: #e8eaed;
+    --muted: #9aa4b2;
+    --accent: #5b9dff;
+    --good: #2fbf71;
+    --border: #262b33;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f7f8fa;
+      --card: #ffffff;
+      --text: #1b1f24;
+      --muted: #5b6472;
+      --accent: #2563eb;
+      --good: #1a8f52;
+      --border: #e3e6eb;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 24px 16px 64px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); margin-top: 0; margin-bottom: 24px; font-size: 0.95rem; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 28px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .card .label { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+  .card .value { font-size: 1.4rem; font-weight: 600; }
+  .card .sub { color: var(--muted); font-size: 0.8rem; margin-top: 4px; }
+  section { margin-bottom: 32px; }
+  h2 { font-size: 1.1rem; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 0.8rem; text-transform: uppercase; }
+  tr.good-deal td { background: color-mix(in srgb, var(--good) 12%, transparent); }
+  .badge { background: var(--good); color: #06210f; font-size: 0.7rem; padding: 2px 6px; border-radius: 999px; font-weight: 600; }
+  .muted { color: var(--muted); }
+  .chart { width: 100%; height: auto; }
+  .chart-line { stroke: var(--accent); stroke-width: 2; }
+  .chart-dot { fill: var(--accent); }
+  .gridline { stroke: var(--border); stroke-width: 1; }
+  .axis-label { fill: var(--muted); font-size: 10px; }
+  footer { color: var(--muted); font-size: 0.8rem; margin-top: 40px; }
+  code { background: var(--card); border: 1px solid var(--border); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Recife → Curitiba: monitor de passagens</h1>
+  <p class="subtitle">Ida 18/12/2026–31/12/2026 · Volta 02/01/2027–11/01/2027 · Programa: TudoAzul · Atualizado em 09/08/2026, 18:29</p>
+
+  <div class="cards">
+    <div class="card">
+      <div class="label">Menor preço em dinheiro</div>
+      <div class="value">—</div>
+      <div class="sub">sem dados</div>
+    </div>
+    <div class="card">
+      <div class="label">Menor preço em pontos</div>
+      <div class="value">—</div>
+      <div class="sub">sem dados</div>
+    </div>
+    <div class="card">
+      <div class="label">Valor médio do ponto</div>
+      <div class="value">—</div>
+      <div class="sub">Custo de compra: R$ 34,99/1000</div>
+    </div>
+    <div class="card">
+      <div class="label">Amostras coletadas</div>
+      <div class="value">0</div>
+      <div class="sub">nenhuma ainda</div>
+    </div>
+  </div>
+
+  <section>
+    <h2>Histórico de preço em dinheiro</h2>
+    <p class="muted">Ainda nao ha historico suficiente para o grafico (minimo 2 pontos).</p>
+  </section>
+
+  <section>
+    <h2>Melhores combinações de data já vistas</h2>
+    <table>
+      <thead><tr><th>Ida → Volta</th><th>Menor R$</th><th>Menor pontos</th><th>Amostras</th></tr></thead>
+      <tbody><tr><td colspan="4" class="muted">Sem dados ainda.</td></tr></tbody>
+    </table>
+  </section>
+
+  <footer>
+    Gerado automaticamente a partir de <code>data/history.json</code>. Preços em pontos são do programa TudoAzul.
+    "Bom preço" = pelo menos 15% abaixo da média histórica para o mesmo par de datas.
+    Dados coletados por scraping best-effort; podem estar desatualizados ou faltando se o site de origem mudou de layout —
+    use <code>npm run add-price</code> para complementar manualmente.
+  </footer>
+</div>
+</body>
+</html>
