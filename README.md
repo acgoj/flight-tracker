@@ -38,14 +38,39 @@ Grau de confiança, do mais provável de funcionar para o menos:
 | LATAM | média | média | Formato de URL bem conhecido (`redemption=true/false`) |
 | GOL | baixa | **muito baixa** | URL de compra muda com frequência; **o Smiles normalmente exige login** para mostrar as tabelas boas |
 
-Como validar depois do primeiro push:
+### Status conhecido
+
+A primeira execução real no GitHub Actions (run #1, só com a Azul) falhou
+nas 23 consultas com "carregou, mas sem preços" — ou seja, **a conexão
+funcionou, mas nenhuma tela de resultado apareceu**. Ainda não sabemos se
+foi deep-link errado, SPA lenta ou bloqueio anti-bot; o diagnóstico abaixo
+foi construído justamente para responder isso na próxima execução.
+
+### Lendo o diagnóstico
+
+Quando uma consulta falha, a mensagem já diz **qual é o problema**, e o
+nome do arquivo em `debug/` carrega a mesma classificação:
+
+| Diagnóstico | Significa | O que fazer |
+|---|---|---|
+| `bloqueio-anti-bot` | O site recusou acesso automatizado | Não é o código. Comum a partir de IP de datacenter (runners do Actions). Rode local ou use `add-price` |
+| `erro-de-rede` | A página nem carregou | Rede, DNS ou bloqueio de saída |
+| `carregou-sem-precos` | Página abriu, sem preço nenhum | Deep-link errado (caiu na home), busca sem voos, ou resultados mais lentos que `resultsWaitMs` |
+| `formulario-nao-encontrado` | Nenhum seletor de busca bateu | Layout mudou: ajuste `formSelectors` do módulo |
+
+Se três consultas seguidas da mesma companhia falharem pelo mesmo motivo
+estrutural, o scraper **aborta aquela companhia** e pula o resto — não
+adianta insistir, e martelar um site que já recusou o acesso é má prática.
+
+Como validar/consertar:
 
 1. Aba **Actions** → *Monitorar precos Recife-Curitiba* → **Run workflow**,
-   marcando `quick` (e opcionalmente uma companhia só, para isolar).
-2. Se falhar, o job sobe um artefato `debug-scrape-*` com screenshot e HTML
-   da página no momento da falha — baixe e veja o que mudou.
-3. Ajuste o módulo daquela companhia em `src/scrapers/` (URL e seletores) ou
-   os padrões em `src/scrapers/fare-parser.js`.
+   marcando `quick` e escolhendo uma companhia, para isolar.
+2. Leia o diagnóstico no log — na maioria dos casos ele já basta.
+3. Se precisar do HTML, o job sobe um artefato `debug-scrape-*` com
+   screenshot e HTML da página no momento da falha.
+4. Ajuste o módulo da companhia em `src/scrapers/` (URL e seletores) ou os
+   padrões em `src/scrapers/fare-parser.js`.
 
 Uma companhia quebrada **não derruba as outras**: cada consulta falha
 isoladamente e o resumo no fim da execução diz qual companhia não retornou

@@ -18,7 +18,12 @@ const {
 const { analyze, isGoodDeal, impliedPointValuePer1000, pointsVerdict } = require('../src/analyze');
 const { render, buildSeries } = require('../scripts/render-dashboard');
 const { AIRLINES, getAirline, getEnabledAirlines } = require('../src/scrapers');
-const { looksLikeResults, looksLikeNetworkError } = require('../src/scrapers/base');
+const {
+  looksLikeResults,
+  looksLikeNetworkError,
+  looksLikeBotBlock,
+  classifyPage,
+} = require('../src/scrapers/base');
 const cfg = require('../src/config');
 
 let passed = 0;
@@ -130,6 +135,31 @@ test('looksLikeNetworkError distingue erro do navegador de tela sem resultado', 
   // Uma busca legitima que so nao achou voo NAO e erro de rede.
   assert.strictEqual(looksLikeNetworkError('Nenhum voo encontrado para esta data.'), false);
   assert.strictEqual(looksLikeNetworkError('A partir de R$ 843,21'), false);
+});
+
+test('looksLikeBotBlock reconhece telas de protecao anti-bot', () => {
+  assert.strictEqual(looksLikeBotBlock('Access Denied\nReference #18.abcd'), true);
+  assert.strictEqual(looksLikeBotBlock('Pardon Our Interruption'), true);
+  assert.strictEqual(looksLikeBotBlock('Checking your browser before accessing'), true);
+  // Uma pagina de resultados legitima nao pode cair aqui.
+  assert.strictEqual(looksLikeBotBlock('A partir de R$ 843,21'), false);
+});
+
+test('classifyPage separa os quatro desfechos possiveis', () => {
+  assert.strictEqual(classifyPage('A partir de R$ 843,21'), 'resultados');
+  assert.strictEqual(classifyPage('41.000 milhas'), 'resultados');
+  assert.strictEqual(classifyPage('Access Denied Reference #18.x'), 'bloqueio-anti-bot');
+  assert.strictEqual(classifyPage("This site can't be reached ERR_CONNECTION_RESET"), 'erro-de-rede');
+  assert.strictEqual(classifyPage('Planeje sua viagem com a gente'), 'carregou-sem-precos');
+  assert.strictEqual(classifyPage(''), 'vazia');
+  assert.strictEqual(classifyPage('   '), 'vazia');
+});
+
+test('bloqueio anti-bot tem prioridade sobre "carregou sem precos"', () => {
+  // Uma tela de bloqueio nao pode ser diagnosticada como layout mudado:
+  // mandaria o investigador mexer em seletor a toa.
+  const bloqueio = 'Access Denied\nYou don\'t have permission to access this resource.';
+  assert.strictEqual(classifyPage(bloqueio), 'bloqueio-anti-bot');
 });
 
 // --- analise ----------------------------------------------------------

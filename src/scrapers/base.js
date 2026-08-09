@@ -78,45 +78,132 @@ function looksLikeNetworkError(text) {
   );
 }
 
-// Devolve sempre { text, networkError } - nunca lanca. text vem null
-// quando a pagina carregou mas nao parece uma tela de resultados.
+// Tela de protecao anti-bot (Akamai, Incapsula, Cloudflare, PerimeterX).
+// Companhias aereas usam isso pesado, e runners de CI saem de IP de
+// datacenter - que e justamente o que essas protecoes bloqueiam. E um
+// diagnostico completamente diferente de "o site mudou de layout": nao
+// adianta mexer em seletor, o conteudo nunca chegou.
+function looksLikeBotBlock(text) {
+  return /Access Denied|Pardon Our Interruption|Request unsuccessful|Incapsula|unusual traffic|verifique que você não é um robô|Attention Required|Checking your browser|captcha|Reference #\d|Error 15\d\d/i.test(
+    text || ''
+  );
+}
+
+// O que fazer diante de cada diagnostico. Vai direto para o log, para que
+// quem le a execucao saiba se o problema e do codigo, do site ou do IP.
+const EXPLANATIONS = {
+  'bloqueio-anti-bot':
+    'BLOQUEIO ANTI-BOT: o site recusou o acesso automatizado (comum a partir de IP de datacenter, como os runners do GitHub Actions). ' +
+    'Mexer em seletor nao resolve - rode local, ou registre o preco com `npm run add-price`.',
+  'erro-de-rede': 'ERRO DE REDE: a pagina nao carregou (conexao recusada/resetada/DNS). Problema de rede ou bloqueio, nao do parser.',
+  'falha-ao-abrir': 'FALHA AO ABRIR a pagina (timeout ou erro do navegador).',
+  'carregou-sem-precos':
+    'A PAGINA CARREGOU mas nao tinha nenhum preco: o deep-link pode estar errado (caiu na home), a busca nao retornou voos, ' +
+    'ou os resultados demoram mais que o tempo de espera (resultsWaitMs).',
+  'formulario-nao-encontrado':
+    'FORMULARIO NAO ENCONTRADO: nenhum seletor de busca bateu. O layout do site provavelmente mudou - ajuste formSelectors deste modulo.',
+  vazia: 'A PAGINA VEIO VAZIA (sem texto algum).',
+  'sem-formulario': 'A URL direta nao trouxe resultados e este modulo nao define formSelectors como plano B.',
+};
+
+// Classifica o que a pagina realmente e, para que a mensagem de erro
+// aponte a causa em vez de mandar o investigador procurar seletor a toa.
+function classifyPage(text) {
+  if (!text || !text.trim()) return 'vazia';
+  if (looksLikeNetworkError(text)) return 'erro-de-rede';
+  if (looksLikeBotBlock(text)) return 'bloqueio-anti-bot';
+  if (looksLikeResults(text)) return 'resultados';
+  return 'carregou-sem-precos';
+}
+
+// Resumo curto da pagina para ir no log: titulo + comeco do texto. Sem
+// isso, descobrir o motivo da falha exige baixar o artefato de debug.
+function pageSnippet(title, text) {
+  const clean = (text || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+  return `titulo="${(title || '').slice(0, 60)}" texto="${clean}${clean.length === 160 ? '…' : ''}"`;
+}
+
+// Espera os precos aparecerem em vez de dormir um tempo fixo: sites de
+// companhia sao SPAs que carregam os voos por XHR depois do
+// domcontentloaded. Retorna assim que houver sinal de preco, ou desiste
+// no timeout (e ai o texto que voltar ja serve para diagnosticar).
+async function waitForPrices(page, timeoutMs) {
+  const started = Date.now();
+  let text = '';
+  while (Date.now() - started < timeoutMs) {
+    text = await page.innerText('body').catch(() => '');
+    if (looksLikeResults(text) || looksLikeNetworkError(text) || looksLikeBotBlock(text)) return text;
+    await page.waitForTimeout(1000);
+  }
+  return text;
+}
+
+// Devolve sempre { text, kind, snippet } - nunca lanca. text so vem
+// preenchido quando a pagina parece de resultados; kind explica o resto.
 async function collectFromUrl(page, url, waitMs) {
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
   } catch (e) {
-    return { text: null, networkError: looksLikeNetworkError(e.message) };
+    const kind = looksLikeNetworkError(e.message) ? 'erro-de-rede' : 'falha-ao-abrir';
+    return { text: null, kind, snippet: e.message.split('\n')[0].slice(0, 120) };
   }
-  await page.waitForTimeout(waitMs);
-  const text = await page.innerText('body').catch(() => '');
-  if (looksLikeNetworkError(text)) return { text: null, networkError: true };
-  return { text: looksLikeResults(text) ? text : null, networkError: false };
+  const raw = await waitForPrices(page, waitMs);
+  const kind = classifyPage(raw);
+  const title = await page.title().catch(() => '');
+  return {
+    text: kind === 'resultados' ? raw : null,
+    kind,
+    snippet: pageSnippet(title, raw),
+  };
 }
 
 // Plano B: abre a home e preenche o formulario de busca manualmente.
-// Mesmo contrato de collectFromUrl: sempre { text, networkError }.
+// Mesmo contrato de collectFromUrl: sempre { text, kind, snippet }.
 async function collectFromForm(page, airline, cfg, departDate, returnDate, waitMs) {
   const sel = airline.formSelectors;
-  if (!sel) return { text: null, networkError: false };
+  if (!sel) return { text: null, kind: 'sem-formulario', snippet: '' };
 
   try {
     await page.goto(airline.homeUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
   } catch (e) {
-    return { text: null, networkError: looksLikeNetworkError(e.message) };
+    const kind = looksLikeNetworkError(e.message) ? 'erro-de-rede' : 'falha-ao-abrir';
+    return { text: null, kind, snippet: e.message.split('\n')[0].slice(0, 120) };
   }
   await page.waitForTimeout(2000);
 
-  await fillFirstMatch(page, sel.originInput, cfg.route.origin);
-  await page.waitForTimeout(500);
-  await fillFirstMatch(page, sel.destinationInput, cfg.route.destination);
+  // Se a home ja e bloqueio/erro, nem adianta tentar preencher o
+  // formulario - reporta a causa real em vez de "seletor nao encontrado".
+  const homeText = await page.innerText('body').catch(() => '');
+  const homeKind = classifyPage(homeText);
+  if (homeKind === 'bloqueio-anti-bot' || homeKind === 'erro-de-rede') {
+    const title = await page.title().catch(() => '');
+    return { text: null, kind: homeKind, snippet: pageSnippet(title, homeText) };
+  }
+
+  const filled = {
+    origem: await fillFirstMatch(page, sel.originInput, cfg.route.origin),
+    destino: await fillFirstMatch(page, sel.destinationInput, cfg.route.destination),
+  };
   await page.waitForTimeout(500);
   await fillFirstMatch(page, sel.departDateInput, fmtDateBR(departDate));
   await fillFirstMatch(page, sel.returnDateInput, fmtDateBR(returnDate));
-  await clickFirstMatch(page, sel.searchButton);
+  const clicked = await clickFirstMatch(page, sel.searchButton);
 
-  await page.waitForTimeout(waitMs);
-  const text = await page.innerText('body').catch(() => '');
-  if (looksLikeNetworkError(text)) return { text: null, networkError: true };
-  return { text: looksLikeResults(text) ? text : null, networkError: false };
+  // Nenhum seletor bateu = o formulario mudou. Diagnostico bem diferente
+  // de "busquei e nao achei voo".
+  if (!filled.origem && !filled.destino && !clicked) {
+    const title = await page.title().catch(() => '');
+    return {
+      text: null,
+      kind: 'formulario-nao-encontrado',
+      snippet: pageSnippet(title, homeText),
+    };
+  }
+
+  const raw = await waitForPrices(page, waitMs);
+  const kind = classifyPage(raw);
+  const title = await page.title().catch(() => '');
+  return { text: kind === 'resultados' ? raw : null, kind, snippet: pageSnippet(title, raw) };
 }
 
 // Roda um scraper de companhia para um par de datas.
@@ -142,16 +229,16 @@ async function scrapeAirline(cfg, airline, departDate, returnDate, { debug = fal
     // Passada 1: preco em dinheiro.
     const direct = await collectFromUrl(page, airline.buildCashUrl(cfg, departDate, returnDate), waitMs);
     let cashText = direct.text;
-    let networkError = direct.networkError;
+    let diagnosis = { kind: direct.kind, snippet: direct.snippet, via: 'url-direta' };
     let usedFallback = false;
 
     if (!cashText) {
       usedFallback = true;
       const viaForm = await collectFromForm(page, airline, cfg, departDate, returnDate, waitMs);
       cashText = viaForm.text;
-      // So culpa a rede se AMBAS as tentativas falharam por rede - se o
-      // formulario carregou, o site esta no ar e o problema e outro.
-      networkError = networkError && viaForm.networkError;
+      // O diagnostico da segunda tentativa manda: se o formulario carregou,
+      // o site esta no ar e o problema nao e o que a primeira sugeriu.
+      diagnosis = { kind: viaForm.kind, snippet: viaForm.snippet, via: 'formulario' };
     }
     if (debug) await saveDebugArtifacts(page, `${label}-dinheiro`);
 
@@ -172,17 +259,16 @@ async function scrapeAirline(cfg, airline, departDate, returnDate, { debug = fal
       lowestPoints: pointsParsed.lowestPoints ?? null,
       lowestPointsTax: pointsParsed.lowestPointsTax ?? null,
       usedFallback,
+      kind: diagnosis.kind,
     };
 
     if (result.lowestCash == null && result.lowestPoints == null) {
-      await saveDebugArtifacts(page, `${label}-VAZIO`);
-      // Erro de rede e um problema totalmente diferente de "o site mudou":
-      // dizer qual dos dois foi economiza uma investigacao inteira.
-      throw new Error(
-        networkError
-          ? 'a pagina nao carregou (conexao recusada/resetada) - problema de rede ou bloqueio do site, nao do parser'
-          : `nenhum preco encontrado (usedFallback=${usedFallback}); veja debug/ para o HTML capturado`
-      );
+      await saveDebugArtifacts(page, `${label}-${diagnosis.kind}`);
+      // A causa vai na propria mensagem: sem isso o log so diz "nao achei
+      // preco" e a investigacao exige baixar o artefato de debug.
+      const err = new Error(`${EXPLANATIONS[diagnosis.kind] || diagnosis.kind} [via ${diagnosis.via}] ${diagnosis.snippet}`);
+      err.kind = diagnosis.kind;
+      throw err;
     }
     return result;
   } finally {
@@ -196,5 +282,8 @@ module.exports = {
   fmtDateBR,
   looksLikeResults,
   looksLikeNetworkError,
+  looksLikeBotBlock,
+  classifyPage,
+  EXPLANATIONS,
   USER_AGENT,
 };

@@ -87,9 +87,27 @@ async function main() {
   // quebrou" de "tudo quebrou".
   const stats = new Map(airlines.map((a) => [a.id, { ok: 0, failed: 0, name: a.name }]));
 
+  // Se as primeiras consultas de uma companhia falham todas pelo mesmo
+  // motivo estrutural (bloqueio, rede, formulario sumido), as outras vao
+  // falhar igual: abortar poupa tempo e evita martelar um site que ja
+  // recusou o acesso.
+  const FATAL_KINDS = new Set(['bloqueio-anti-bot', 'erro-de-rede', 'formulario-nao-encontrado']);
+  const ABORT_AFTER = 3;
+
   for (const airline of airlines) {
     console.log(`== ${airline.name} (${airline.loyaltyProgram}) ==`);
+    let consecutiveFatal = 0;
+    let lastFatalKind = null;
+
     for (const [i, pair] of pairs.entries()) {
+      if (consecutiveFatal >= ABORT_AFTER) {
+        const restantes = pairs.length - i;
+        console.log(`  Abortando ${airline.name}: ${ABORT_AFTER} falhas seguidas por "${lastFatalKind}". ` +
+          `${restantes} consulta(s) puladas.`);
+        stats.get(airline.id).failed += restantes;
+        stats.get(airline.id).abortedBecause = lastFatalKind;
+        break;
+      }
       process.stdout.write(`  [${i + 1}/${pairs.length}] ${pair.departDate} -> ${pair.returnDate}: `);
       try {
         const result = await scrapeAirline(cfg, airline, pair.departDate, pair.returnDate, {
@@ -115,9 +133,16 @@ async function main() {
             (result.usedFallback ? ' (via formulario)' : '')
         );
         stats.get(airline.id).ok += 1;
+        consecutiveFatal = 0;
       } catch (e) {
-        console.log(`FALHOU (${e.message})`);
+        console.log(`FALHOU\n      ${e.message}`);
         stats.get(airline.id).failed += 1;
+        if (FATAL_KINDS.has(e.kind)) {
+          consecutiveFatal = e.kind === lastFatalKind ? consecutiveFatal + 1 : 1;
+          lastFatalKind = e.kind;
+        } else {
+          consecutiveFatal = 0;
+        }
       }
       if (i < pairs.length - 1) await sleep(args.delay);
     }
@@ -127,15 +152,18 @@ async function main() {
   console.log('Resumo:');
   let totalOk = 0;
   for (const [, s] of stats) {
-    console.log(`  ${s.name}: ${s.ok} sucesso(s), ${s.failed} falha(s)`);
+    const motivo = s.abortedBecause ? ` — abortada: ${s.abortedBecause}` : '';
+    console.log(`  ${s.name}: ${s.ok} sucesso(s), ${s.failed} falha(s)${motivo}`);
     totalOk += s.ok;
   }
 
   if (totalOk === 0) {
+    const motivos = [...new Set(Array.from(stats.values()).map((s) => s.abortedBecause).filter(Boolean))];
     console.error(
-      '\nNenhuma consulta funcionou em nenhuma companhia. Os sites podem ter mudado de ' +
-        'layout ou estar bloqueando acesso automatizado. Rode com --debug --quick e confira ' +
-        'os arquivos em debug/, ou use `npm run add-price` para registrar precos manualmente.'
+      '\nNenhuma consulta funcionou em nenhuma companhia.' +
+        (motivos.length ? ` Causa predominante: ${motivos.join(', ')}.` : '') +
+        '\nAs mensagens acima dizem se o problema foi bloqueio, rede ou layout. ' +
+        'Enquanto isso, `npm run add-price` registra precos manualmente.'
     );
     process.exitCode = 1;
   } else {
