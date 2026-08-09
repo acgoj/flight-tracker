@@ -11,6 +11,11 @@ on:
         description: 'Consultar so o par de datas padrao (mais rapido)'
         type: boolean
         default: false
+      airline:
+        description: 'Testar so uma companhia (util para depurar um scraper)'
+        type: choice
+        default: todas
+        options: [todas, azul, gol, latam]
 
 permissions:
   contents: write
@@ -35,15 +40,16 @@ jobs:
       - name: Instalar navegador Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Rodar scraper
+      - name: Rodar scrapers
         id: scrape
         continue-on-error: true
         run: |
-          if [ "${{ inputs.quick }}" = "true" ]; then
-            npm run scrape -- --quick
-          else
-            npm run scrape
+          ARGS=""
+          [ "${{ inputs.quick }}" = "true" ] && ARGS="$ARGS --quick"
+          if [ -n "${{ inputs.airline }}" ] && [ "${{ inputs.airline }}" != "todas" ]; then
+            ARGS="$ARGS --airline=${{ inputs.airline }}"
           fi
+          npm run scrape -- $ARGS
 
       - name: Gerar dashboard
         run: npm run build-dashboard

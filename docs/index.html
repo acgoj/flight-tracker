@@ -7,62 +7,96 @@
 <style>
   :root {
     color-scheme: light dark;
+    --bg: #f7f8fa;
+    --surface: #ffffff;
+    --text: #1b1f24;
+    --muted: #5b6472;
+    --good: #1a8f52;
+    --bad: #a1441f;
+    --border: #e3e6eb;
+    --series-azul: #2a78d6;
+    --series-gol: #eb6834;
+    --series-latam: #1baf7a;
+    --series-outra: #eda100;
+  }
+  /* Modo escuro: passos proprios para a superficie escura, nao um flip
+     automatico do claro. Declarado nos dois escopos - a media query cobre
+     a preferencia do sistema, o [data-theme] cobre um toggle explicito. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+    --series-azul: #3987e5;
+    --series-gol: #d95926;
+    --series-latam: #199e70;
+    --series-outra: #c98500;
     --bg: #0f1216;
-    --card: #171b21;
+    --surface: #171b21;
     --text: #e8eaed;
     --muted: #9aa4b2;
-    --accent: #5b9dff;
     --good: #2fbf71;
+    --bad: #e08f6d;
     --border: #262b33;
-  }
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg: #f7f8fa;
-      --card: #ffffff;
-      --text: #1b1f24;
-      --muted: #5b6472;
-      --accent: #2563eb;
-      --good: #1a8f52;
-      --border: #e3e6eb;
     }
+  }
+  :root[data-theme="dark"] {
+    --series-azul: #3987e5;
+    --series-gol: #d95926;
+    --series-latam: #199e70;
+    --series-outra: #c98500;
+    --bg: #0f1216;
+    --surface: #171b21;
+    --text: #e8eaed;
+    --muted: #9aa4b2;
+    --good: #2fbf71;
+    --bad: #e08f6d;
+    --border: #262b33;
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
+    margin: 0; background: var(--bg); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     padding: 24px 16px 64px;
   }
-  .wrap { max-width: 880px; margin: 0 auto; }
+  .wrap { max-width: 900px; margin: 0 auto; }
   h1 { font-size: 1.5rem; margin-bottom: 4px; }
-  .subtitle { color: var(--muted); margin-top: 0; margin-bottom: 24px; font-size: 0.95rem; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 28px; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
-  .card .label { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
-  .card .value { font-size: 1.4rem; font-weight: 600; }
+  .subtitle { color: var(--muted); margin: 0 0 24px; font-size: 0.9rem; line-height: 1.5; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 32px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .card .label { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+  .card .value { font-size: 1.35rem; font-weight: 600; }
   .card .sub { color: var(--muted); font-size: 0.8rem; margin-top: 4px; }
-  section { margin-bottom: 32px; }
-  h2 { font-size: 1.1rem; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
-  th { color: var(--muted); font-weight: 500; font-size: 0.8rem; text-transform: uppercase; }
+  section { margin-bottom: 36px; }
+  h2 { font-size: 1.05rem; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 14px; }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; min-width: 460px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .cell-sub { color: var(--muted); font-size: 0.78rem; margin-top: 2px; }
   tr.good-deal td { background: color-mix(in srgb, var(--good) 12%, transparent); }
   .badge { background: var(--good); color: #06210f; font-size: 0.7rem; padding: 2px 6px; border-radius: 999px; font-weight: 600; }
+  .verdict { font-weight: 600; font-size: 0.82rem; }
+  .verdict-yes { color: var(--good); }
+  .verdict-no { color: var(--bad); }
   .muted { color: var(--muted); }
-  .chart { width: 100%; height: auto; }
-  .chart-line { stroke: var(--accent); stroke-width: 2; }
-  .chart-dot { fill: var(--accent); }
+  .chart { width: 100%; height: auto; overflow: visible; }
   .gridline { stroke: var(--border); stroke-width: 1; }
   .axis-label { fill: var(--muted); font-size: 10px; }
-  footer { color: var(--muted); font-size: 0.8rem; margin-top: 40px; }
-  code { background: var(--card); border: 1px solid var(--border); padding: 1px 5px; border-radius: 4px; }
+  .series-label { fill: var(--muted); font-size: 11px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 8px; font-size: 0.82rem; color: var(--muted); }
+  .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 6px; vertical-align: baseline; }
+  .legend .swatch { margin-right: 0; }
+  footer { color: var(--muted); font-size: 0.8rem; line-height: 1.6; margin-top: 40px; }
+  code { background: var(--surface); border: 1px solid var(--border); padding: 1px 5px; border-radius: 4px; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Recife → Curitiba: monitor de passagens</h1>
-  <p class="subtitle">Ida 18/12/2026–31/12/2026 · Volta 02/01/2027–11/01/2027 · Programa: TudoAzul · Atualizado em 09/08/2026, 18:43</p>
+  <p class="subtitle">
+    Ida 18/12/2026–31/12/2026 ·
+    Volta 02/01/2027–11/01/2027 ·
+    0 companhia(s) · Atualizado em 09/08/2026, 19:00
+  </p>
 
   <div class="cards">
     <div class="card">
@@ -76,11 +110,6 @@
       <div class="sub">sem dados</div>
     </div>
     <div class="card">
-      <div class="label">Valor médio do ponto</div>
-      <div class="value">—</div>
-      <div class="sub">Custo de compra: R$ 34,99/1000</div>
-    </div>
-    <div class="card">
       <div class="label">Amostras coletadas</div>
       <div class="value">0</div>
       <div class="sub">nenhuma ainda</div>
@@ -88,23 +117,47 @@
   </div>
 
   <section>
-    <h2>Histórico de preço em dinheiro</h2>
-    <p class="muted">Ainda nao ha historico suficiente para o grafico (minimo 2 pontos).</p>
+    <h2>Comparação entre companhias</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>Companhia</th><th>Menor R$</th><th>Menor pontos</th>
+          <th>Valor do ponto /1000</th><th>Custo de compra /1000</th><th>Veredito</th>
+        </tr></thead>
+        <tbody><tr><td colspan="6" class="muted">Sem dados ainda.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Melhor preço em dinheiro por dia</h2>
+    
+    <p class="muted">Ainda não há histórico suficiente para o gráfico (mínimo 2 coletas).</p>
+  </section>
+
+  <section>
+    <h2>Melhor preço em pontos por dia</h2>
+    
+    <p class="muted">Ainda não há histórico suficiente para o gráfico (mínimo 2 coletas).</p>
   </section>
 
   <section>
     <h2>Melhores combinações de data já vistas</h2>
-    <table>
-      <thead><tr><th>Ida → Volta</th><th>Menor R$</th><th>Menor pontos</th><th>Amostras</th></tr></thead>
-      <tbody><tr><td colspan="4" class="muted">Sem dados ainda.</td></tr></tbody>
-    </table>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Ida → Volta</th><th>Menor R$</th><th>Menor pontos</th><th>Amostras</th></tr></thead>
+        <tbody><tr><td colspan="4" class="muted">Sem dados ainda.</td></tr></tbody>
+      </table>
+    </div>
   </section>
 
   <footer>
-    Gerado automaticamente a partir de <code>data/history.json</code>. Preços em pontos são do programa TudoAzul.
-    "Bom preço" = pelo menos 15% abaixo da média histórica para o mesmo par de datas.
+    Gerado automaticamente a partir de <code>data/history.json</code>.
+    "Bom preço" = pelo menos 15% abaixo da média histórica da mesma companhia para o mesmo par de datas.
+    "Valor do ponto" = quanto de dinheiro cada 1000 pontos evita, comparado ao custo de comprar 1000 pontos
+    (esse custo é um valor que você configura em <code>src/config.js</code> — confira se está atualizado).
     Dados coletados por scraping best-effort; podem estar desatualizados ou faltando se o site de origem mudou de layout —
-    use <code>npm run add-price</code> para complementar manualmente.
+    complemente com <code>npm run add-price</code>.
   </footer>
 </div>
 </body>

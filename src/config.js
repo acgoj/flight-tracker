@@ -1,4 +1,4 @@
-// Configuracao da rota monitorada e das janelas de datas.
+// Configuracao da rota monitorada, das janelas de datas e das companhias.
 // Edite este arquivo para mudar rota, datas ou parametros de analise.
 
 module.exports = {
@@ -21,7 +21,8 @@ module.exports = {
   },
 
   // Datas "padrao" usadas quando so queremos checar um par especifico
-  // (ex.: para uma consulta manual rapida ou como fallback).
+  // (modo --quick) e como base ao varrer cada janela: o scraper fixa uma
+  // ponta e varia a outra, em vez de rodar a matriz completa ida x volta.
   defaultPair: {
     departDate: '2026-12-20',
     returnDate: '2027-01-05',
@@ -31,20 +32,40 @@ module.exports = {
     adults: 1,
   },
 
-  // Programa de milhas/pontos monitorado.
-  loyaltyProgram: 'TudoAzul',
-
-  // Quanto custa comprar pontos TudoAzul hoje (R$ por 1000 pontos), usado como
-  // referencia para decidir se vale mais a pena pagar em dinheiro ou em pontos.
-  // Ajuste esse valor quando houver promocao de compra de pontos.
-  pointsPurchaseCostPer1000: 34.99,
+  // Companhias monitoradas. Desabilite (enabled: false) as que nao
+  // interessam - cada uma habilitada multiplica o tempo de execucao.
+  //
+  // pointsPurchaseCostPer1000: quanto custa comprar 1000 pontos/milhas do
+  // programa hoje, usado como referencia para decidir se compensa resgatar
+  // com pontos ou pagar em dinheiro.
+  //
+  // ATENCAO: os valores abaixo sao PLACEHOLDERS aproximados - o preco de
+  // compra de pontos muda o tempo todo (e cai bastante em promocao).
+  // Atualize com o valor real antes de confiar na comparacao.
+  airlines: {
+    azul: {
+      enabled: true,
+      loyaltyProgram: 'TudoAzul',
+      pointsPurchaseCostPer1000: 34.99, // PLACEHOLDER
+    },
+    gol: {
+      enabled: true,
+      loyaltyProgram: 'Smiles',
+      pointsPurchaseCostPer1000: 31.9, // PLACEHOLDER
+    },
+    latam: {
+      enabled: true,
+      loyaltyProgram: 'LATAM Pass',
+      pointsPurchaseCostPer1000: 28.9, // PLACEHOLDER
+    },
+  },
 
   // Um preco em dinheiro e considerado "bom negocio" quando estiver esta
   // fracao (ou mais) abaixo da media historica registrada para o mesmo par
   // de datas (ou da media geral, se ainda nao houver historico suficiente).
   goodDealThreshold: 0.15, // 15% abaixo da media
 
-  // Historico minimo de pontos antes de calcular "bom negocio" por media.
+  // Historico minimo de amostras antes de calcular "bom negocio" por media.
   minSamplesForAverage: 3,
 
   paths: {

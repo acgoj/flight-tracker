@@ -1,61 +1,62 @@
-// Extrai precos (dinheiro e pontos) do TEXTO VISIVEL da pagina de resultados
-// de busca da Azul/TudoAzul.
+// Extrai precos (dinheiro e pontos/milhas) do TEXTO VISIVEL de uma pagina
+// de resultados de busca de voos. Compartilhado por todas as companhias -
+// o formato de preco brasileiro e o mesmo em todas ("R$ 1.234,56"), muda
+// so o vocabulario de fidelidade ("pontos" na Azul/LATAM, "milhas" na
+// GOL/Smiles).
 //
 // IMPORTANTE - por que regex sobre texto visivel em vez de seletores CSS:
-// nao foi possivel acessar o site ao vivo a partir do ambiente onde este
+// nao foi possivel acessar os sites ao vivo a partir do ambiente onde este
 // codigo foi escrito (bloqueado por protecao anti-bot), entao nao da para
 // confiar em classes/data-testid especificos, que podem estar errados ou
-// mudar a qualquer redesign. Buscar por padroes de texto ("R$ 1.234,56",
-// "38.500 pontos") tende a sobreviver melhor a mudancas de layout do que
-// seletores adivinhados. Se a extracao vier vazia, use `--debug` (salva
-// screenshot + html em debug/) para investigar e ajustar os padroes abaixo.
+// mudar a qualquer redesign. Buscar por padroes de texto tende a
+// sobreviver melhor a mudancas de layout do que seletores adivinhados.
+// Se a extracao vier vazia, rode com `--debug` (salva screenshot + html em
+// debug/) para investigar e ajustar os padroes abaixo.
 
 // "R$ 1.234,56" ou "R$1234,56" -> 1234.56
 const CASH_RE = /R\$\s*([\d.]+,\d{2})/g;
 
-// "38.500 pontos", "38500 pontos", "38,5 mil pontos" -> pontos inteiros
-const POINTS_RE = /([\d.,]+)\s*(mil\s+)?pontos/gi;
+// "38.500 pontos", "38500 milhas", "38,5 mil pontos", "12.000 pts"
+const POINTS_RE = /([\d.,]+)\s*(mil\s+)?(?:pontos?|milhas?|pts)\b/gi;
 
 function parseBrNumber(str) {
   return parseFloat(str.replace(/\./g, '').replace(',', '.'));
 }
 
-// So conta valores em R$ de linhas que sao a tarifa em si, nao a taxa de
-// embarque cobrada junto com pontos (ex.: "+ R$ 89,90 de taxas"), que
-// senao "venceria" como o menor preco por ser um valor pequeno.
+// Distingue a linha da tarifa em si da linha de taxa de embarque cobrada
+// junto com a opcao em pontos (ex.: "+ R$ 89,90 de taxas"). Sem isso, a
+// taxa "venceria" como menor preco em dinheiro por ser um valor pequeno.
 function isFareLine(line) {
   const trimmed = line.trim();
   if (trimmed.startsWith('+')) return false;
-  if (/taxa/i.test(trimmed)) return false;
+  if (/taxa|tarifa de embarque/i.test(trimmed)) return false;
   return true;
+}
+
+function matchAllCash(line) {
+  const values = [];
+  let m;
+  CASH_RE.lastIndex = 0;
+  while ((m = CASH_RE.exec(line)) !== null) {
+    const v = parseBrNumber(m[1]);
+    if (!Number.isNaN(v) && v > 0) values.push(v);
+  }
+  return values;
 }
 
 function extractCashValues(text) {
   const values = [];
   for (const line of text.split('\n')) {
-    if (!isFareLine(line)) continue;
-    let m;
-    CASH_RE.lastIndex = 0;
-    while ((m = CASH_RE.exec(line)) !== null) {
-      const v = parseBrNumber(m[1]);
-      if (!Number.isNaN(v) && v > 0) values.push(v);
-    }
+    if (isFareLine(line)) values.push(...matchAllCash(line));
   }
   return values;
 }
 
-// Taxa de embarque cobrada junto com a opcao em pontos (linhas com "+" ou
-// "taxa"). Usado como pointsTax quando disponivel.
+// Taxa de embarque cobrada junto com a opcao em pontos/milhas.
 function extractPointsTaxValues(text) {
   const values = [];
   for (const line of text.split('\n')) {
-    if (isFareLine(line)) continue;
-    let m;
-    CASH_RE.lastIndex = 0;
-    while ((m = CASH_RE.exec(line)) !== null) {
-      const v = parseBrNumber(m[1]);
-      if (!Number.isNaN(v) && v > 0) values.push(v);
-    }
+    if (!isFareLine(line)) values.push(...matchAllCash(line));
   }
   return values;
 }
@@ -73,10 +74,9 @@ function extractPointsValues(text) {
   return values;
 }
 
-// Retorna o menor preco em dinheiro e o menor em pontos encontrados no
-// texto da pagina de resultados, alem da menor taxa de embarque cobrada
-// junto com a opcao em pontos (quando identificavel). Isso e uma
-// aproximacao best-effort - valide contra debug/*.html no primeiro uso.
+// Retorna o menor preco em dinheiro, o menor em pontos/milhas e a menor
+// taxa de embarque identificavel. Aproximacao best-effort - valide contra
+// debug/*.html no primeiro uso de cada companhia.
 function parseSearchResultsText(text) {
   const cashValues = extractCashValues(text);
   const pointsValues = extractPointsValues(text);
@@ -97,4 +97,5 @@ module.exports = {
   extractPointsValues,
   extractPointsTaxValues,
   parseBrNumber,
+  isFareLine,
 };
