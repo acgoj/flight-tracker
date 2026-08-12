@@ -27,15 +27,19 @@ concurrency:
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    env:
+      QUICK: ${{ github.event.inputs.quick || 'false' }}
+      AIRLINE: ${{ github.event.inputs.airline || 'todas' }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: npm
 
       - name: Instalar dependencias
-        run: npm install
+        run: npm ci
 
       - name: Instalar navegador Chromium
         run: npx playwright install --with-deps chromium
@@ -45,9 +49,9 @@ jobs:
         continue-on-error: true
         run: |
           ARGS=""
-          [ "${{ inputs.quick }}" = "true" ] && ARGS="$ARGS --quick"
-          if [ -n "${{ inputs.airline }}" ] && [ "${{ inputs.airline }}" != "todas" ]; then
-            ARGS="$ARGS --airline=${{ inputs.airline }}"
+          [ "$QUICK" = "true" ] && ARGS="$ARGS --quick"
+          if [ -n "$AIRLINE" ] && [ "$AIRLINE" != "todas" ]; then
+            ARGS="$ARGS --airline=$AIRLINE"
           fi
           npm run scrape -- $ARGS
 
@@ -64,12 +68,22 @@ jobs:
           if-no-files-found: ignore
 
       - name: Commitar dados e dashboard atualizados
+        id: commit
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add data/history.json docs/index.html
-          git diff --cached --quiet || git commit -m "chore: atualizar precos REC-CWB [skip ci]"
-          git push
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Sem mudancas para commitar."
+          else
+            git commit -m "chore: atualizar precos REC-CWB [skip ci]"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enviar alteracoes para o repositorio
+        if: steps.commit.outputs.changed == 'true'
+        run: git push
 
       - name: Marcar job como falho se o scraper falhou
         if: steps.scrape.outcome == 'failure'
