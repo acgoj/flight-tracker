@@ -1,29 +1,43 @@
 #!/usr/bin/env node
-// Roda os scrapers das companhias habilitadas para um conjunto de pares de
-// datas dentro das janelas configuradas em src/config.js e grava os
-// resultados em data/history.json.
+// Consulta precos para um conjunto de pares de datas (src/config.js) e
+// grava os resultados em data/history.json.
 //
 // Uso:
-//   node scripts/run-scrape.js                  -> todas as cias, janelas completas
-//   node scripts/run-scrape.js --quick          -> so o par de datas padrao
-//   node scripts/run-scrape.js --airline=latam  -> so uma companhia
-//   node scripts/run-scrape.js --debug          -> salva screenshot/html em debug/
-//   node scripts/run-scrape.js --delay=2000     -> pausa (ms) entre consultas
+//   node scripts/run-scrape.js                       -> Google Voos, janelas completas
+//   node scripts/run-scrape.js --quick               -> so o par de datas padrao
+//   node scripts/run-scrape.js --airline=latam       -> so uma companhia
+//   node scripts/run-scrape.js --source=airlines     -> Playwright nos sites das cias
+//   node scripts/run-scrape.js --source=all          -> Google + sites das cias
+//   node scripts/run-scrape.js --debug               -> salva html em debug/
+//   node scripts/run-scrape.js --delay=2000          -> pausa (ms) entre consultas
+//
+// Padrao: --source=google. Os sites das cias bloqueiam IP de datacenter
+// (GitHub Actions); o Google Voos e a fonte que realmente devolve tarifa
+// em dinheiro. Pontos/milhas continuam vindo das cias (--source=airlines)
+// ou de `npm run add-price`.
 
 const cfg = require('../src/config');
 const { appendEntry } = require('../src/history');
 const { scrapeAirline } = require('../src/scrapers/base');
+const { scrapeGoogleFlights } = require('../src/scrapers/google-flights');
 const { getAirline, getEnabledAirlines } = require('../src/scrapers');
 const { eachDateInRange } = require('./date-utils');
 
+const SOURCES = new Set(['google', 'airlines', 'all']);
+
 function parseArgs(argv) {
-  const args = { debug: false, quick: false, delay: 3000, airline: null };
+  const args = { debug: false, quick: false, delay: null, airline: null, source: 'google' };
   for (const a of argv) {
     if (a === '--debug') args.debug = true;
     else if (a === '--quick') args.quick = true;
     else if (a.startsWith('--delay=')) args.delay = parseInt(a.split('=')[1], 10);
     else if (a.startsWith('--airline=')) args.airline = a.split('=')[1];
+    else if (a.startsWith('--source=')) args.source = a.split('=')[1];
   }
+  if (!SOURCES.has(args.source)) {
+    throw new Error(`Fonte desconhecida: "${args.source}". Disponiveis: ${[...SOURCES].join(', ')}`);
+  }
+  if (args.delay == null) args.delay = args.source === 'google' ? 1200 : 3000;
   return args;
 }
 
@@ -57,40 +71,94 @@ function fmtValue(v, suffix) {
   return v == null ? 'N/D' : `${v}${suffix}`;
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
+function recordCash(cfg, airline, pair, cashTotal, source) {
+  appendEntry(cfg, {
+    scrapedAt: new Date().toISOString(),
+    airline: airline.id,
+    airlineName: airline.name,
+    loyaltyProgram: airline.loyaltyProgram,
+    departDate: pair.departDate,
+    returnDate: pair.returnDate,
+    origin: cfg.route.origin,
+    destination: cfg.route.destination,
+    cashTotal,
+    currency: 'BRL',
+    pointsTotal: null,
+    pointsTax: null,
+    source,
+  });
+}
 
-  let airlines;
-  try {
-    airlines = args.airline ? [getAirline(args.airline)] : getEnabledAirlines(cfg);
-  } catch (e) {
-    console.error(e.message);
-    process.exitCode = 1;
-    return;
+function recordAirlineResult(cfg, airline, pair, result) {
+  appendEntry(cfg, {
+    scrapedAt: new Date().toISOString(),
+    airline: airline.id,
+    airlineName: airline.name,
+    loyaltyProgram: airline.loyaltyProgram,
+    departDate: pair.departDate,
+    returnDate: pair.returnDate,
+    origin: cfg.route.origin,
+    destination: cfg.route.destination,
+    cashTotal: result.lowestCash,
+    currency: 'BRL',
+    pointsTotal: result.lowestPoints,
+    pointsTax: result.lowestPointsTax,
+    source: `${airline.id}-scraper`,
+  });
+}
+
+async function scrapeFromGoogle(cfg, airlines, pairs, args, stats) {
+  console.log('== Google Voos (preco em dinheiro por companhia) ==');
+  const FATAL_KINDS = new Set(['bloqueio-anti-bot', 'erro-de-rede']);
+  const ABORT_AFTER = 3;
+  let consecutiveFatal = 0;
+  let lastFatalKind = null;
+
+  for (const [i, pair] of pairs.entries()) {
+    if (consecutiveFatal >= ABORT_AFTER) {
+      const restantes = pairs.length - i;
+      console.log(`  Abortando Google Voos: ${ABORT_AFTER} falhas seguidas por "${lastFatalKind}". ` +
+        `${restantes} consulta(s) puladas.`);
+      for (const airline of airlines) {
+        stats.get(airline.id).failed += restantes;
+        stats.get(airline.id).abortedBecause = lastFatalKind;
+      }
+      break;
+    }
+    process.stdout.write(`  [${i + 1}/${pairs.length}] ${pair.departDate} -> ${pair.returnDate}: `);
+    try {
+      const byAirline = await scrapeGoogleFlights(cfg, pair.departDate, pair.returnDate, {
+        debug: args.debug,
+      });
+      const found = [];
+      for (const airline of airlines) {
+        const cash = byAirline[airline.id];
+        if (cash == null) {
+          stats.get(airline.id).failed += 1;
+          continue;
+        }
+        recordCash(cfg, airline, pair, cash, 'google-flights');
+        stats.get(airline.id).ok += 1;
+        found.push(`${airline.name} ${fmtValue(cash, '')} R$`);
+      }
+      console.log(found.length ? found.join(' | ') : 'sem tarifas das cias monitoradas');
+      consecutiveFatal = 0;
+    } catch (e) {
+      console.log(`FALHOU\n      ${e.message}`);
+      for (const airline of airlines) stats.get(airline.id).failed += 1;
+      if (FATAL_KINDS.has(e.kind)) {
+        consecutiveFatal = e.kind === lastFatalKind ? consecutiveFatal + 1 : 1;
+        lastFatalKind = e.kind;
+      } else {
+        consecutiveFatal = 0;
+      }
+    }
+    if (i < pairs.length - 1) await sleep(args.delay);
   }
+  console.log('');
+}
 
-  const pairs = buildPairs(cfg, args.quick);
-
-  if (!airlines.length) {
-    console.error('Nenhuma companhia habilitada em src/config.js -> airlines.');
-    process.exitCode = 1;
-    return;
-  }
-
-  console.log(
-    `Rota ${cfg.route.origin}-${cfg.route.destination} | ` +
-      `${airlines.length} companhia(s): ${airlines.map((a) => a.name).join(', ')} | ` +
-      `${pairs.length} par(es) de datas | ${airlines.length * pairs.length} consulta(s)\n`
-  );
-
-  // Estatisticas por companhia, para o resumo final distinguir "uma cia
-  // quebrou" de "tudo quebrou".
-  const stats = new Map(airlines.map((a) => [a.id, { ok: 0, failed: 0, name: a.name }]));
-
-  // Se as primeiras consultas de uma companhia falham todas pelo mesmo
-  // motivo estrutural (bloqueio, rede, formulario sumido), as outras vao
-  // falhar igual: abortar poupa tempo e evita martelar um site que ja
-  // recusou o acesso.
+async function scrapeFromAirlines(cfg, airlines, pairs, args, stats) {
   const FATAL_KINDS = new Set(['bloqueio-anti-bot', 'erro-de-rede', 'formulario-nao-encontrado']);
   const ABORT_AFTER = 3;
 
@@ -113,21 +181,7 @@ async function main() {
         const result = await scrapeAirline(cfg, airline, pair.departDate, pair.returnDate, {
           debug: args.debug,
         });
-        appendEntry(cfg, {
-          scrapedAt: new Date().toISOString(),
-          airline: airline.id,
-          airlineName: airline.name,
-          loyaltyProgram: airline.loyaltyProgram,
-          departDate: pair.departDate,
-          returnDate: pair.returnDate,
-          origin: cfg.route.origin,
-          destination: cfg.route.destination,
-          cashTotal: result.lowestCash,
-          currency: 'BRL',
-          pointsTotal: result.lowestPoints,
-          pointsTax: result.lowestPointsTax,
-          source: `${airline.id}-scraper`,
-        });
+        recordAirlineResult(cfg, airline, pair, result);
         console.log(
           `${fmtValue(result.lowestCash, '')} R$ | ${fmtValue(result.lowestPoints, ' pts')}` +
             (result.usedFallback ? ' (via formulario)' : '')
@@ -147,6 +201,50 @@ async function main() {
       if (i < pairs.length - 1) await sleep(args.delay);
     }
     console.log('');
+  }
+}
+
+async function main() {
+  let args;
+  try {
+    args = parseArgs(process.argv.slice(2));
+  } catch (e) {
+    console.error(e.message);
+    process.exitCode = 1;
+    return;
+  }
+
+  let airlines;
+  try {
+    airlines = args.airline ? [getAirline(args.airline)] : getEnabledAirlines(cfg);
+  } catch (e) {
+    console.error(e.message);
+    process.exitCode = 1;
+    return;
+  }
+
+  const pairs = buildPairs(cfg, args.quick);
+
+  if (!airlines.length) {
+    console.error('Nenhuma companhia habilitada em src/config.js -> airlines.');
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log(
+    `Rota ${cfg.route.origin}-${cfg.route.destination} | ` +
+      `fonte=${args.source} | ` +
+      `${airlines.length} companhia(s): ${airlines.map((a) => a.name).join(', ')} | ` +
+      `${pairs.length} par(es) de datas\n`
+  );
+
+  const stats = new Map(airlines.map((a) => [a.id, { ok: 0, failed: 0, name: a.name }]));
+
+  if (args.source === 'google' || args.source === 'all') {
+    await scrapeFromGoogle(cfg, airlines, pairs, args, stats);
+  }
+  if (args.source === 'airlines' || args.source === 'all') {
+    await scrapeFromAirlines(cfg, airlines, pairs, args, stats);
   }
 
   console.log('Resumo:');
@@ -171,13 +269,18 @@ async function main() {
     if (broken.length) {
       console.warn(
         `\nAtencao: nenhuma consulta funcionou em ${broken.map((s) => s.name).join(', ')}. ` +
-          'O scraper dessa(s) companhia(s) provavelmente precisa de ajuste (veja debug/).'
+          'Essa(s) companhia(s) pode(m) nao ter voo no Google Voos para essas datas, ' +
+          'ou o scraper direto precisa de ajuste (veja debug/).'
       );
     }
   }
 }
 
-main().catch((e) => {
-  console.error('Erro inesperado:', e);
-  process.exitCode = 1;
-});
+module.exports = { parseArgs, buildPairs };
+
+if (require.main === module) {
+  main().catch((e) => {
+    console.error('Erro inesperado:', e);
+    process.exitCode = 1;
+  });
+}

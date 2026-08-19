@@ -84,7 +84,7 @@ function looksLikeNetworkError(text) {
 // diagnostico completamente diferente de "o site mudou de layout": nao
 // adianta mexer em seletor, o conteudo nunca chegou.
 function looksLikeBotBlock(text) {
-  return /Access Denied|Pardon Our Interruption|Request unsuccessful|Incapsula|unusual traffic|verifique que você não é um robô|Attention Required|Checking your browser|captcha|Reference #\d|Error 15\d\d/i.test(
+  return /Access Denied|Pardon Our Interruption|Request unsuccessful|Incapsula|unusual traffic|verifique que você não é um robô|Attention Required|Checking your browser|\bcaptcha\b|Reference #\d|Error 15\d\d|motivos de seguridad|no pudimos permitir tu acceso|por motivos de segurança|não pudemos permitir (o )?seu acesso/i.test(
     text || ''
   );
 }

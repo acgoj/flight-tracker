@@ -24,6 +24,8 @@ const {
   looksLikeBotBlock,
   classifyPage,
 } = require('../src/scrapers/base');
+const { parseGoogleFlightsHtml, buildUrl } = require('../src/scrapers/google-flights');
+const { parseArgs } = require('../scripts/run-scrape');
 const cfg = require('../src/config');
 
 let passed = 0;
@@ -141,8 +143,11 @@ test('looksLikeBotBlock reconhece telas de protecao anti-bot', () => {
   assert.strictEqual(looksLikeBotBlock('Access Denied\nReference #18.abcd'), true);
   assert.strictEqual(looksLikeBotBlock('Pardon Our Interruption'), true);
   assert.strictEqual(looksLikeBotBlock('Checking your browser before accessing'), true);
+  assert.strictEqual(looksLikeBotBlock('Please complete the captcha to continue'), true);
   // Uma pagina de resultados legitima nao pode cair aqui.
   assert.strictEqual(looksLikeBotBlock('A partir de R$ 843,21'), false);
+  // O HTML do Google Voos menciona "/recaptcha/challenge" no JS; isso NAO e bloqueio.
+  assert.strictEqual(looksLikeBotBlock('"/producer/*","/recaptcha/challenge","/r"'), false);
 });
 
 test('classifyPage separa os quatro desfechos possiveis', () => {
@@ -160,6 +165,57 @@ test('bloqueio anti-bot tem prioridade sobre "carregou sem precos"', () => {
   // mandaria o investigador mexer em seletor a toa.
   const bloqueio = 'Access Denied\nYou don\'t have permission to access this resource.';
   assert.strictEqual(classifyPage(bloqueio), 'bloqueio-anti-bot');
+});
+
+test('LATAM Access Denied em espanhol e bloqueio, nao formulario sumido', () => {
+  const text = fixture('latam-access-denied.txt');
+  assert.strictEqual(looksLikeBotBlock(text), true);
+  assert.strictEqual(classifyPage(text), 'bloqueio-anti-bot');
+});
+
+// --- Google Voos ------------------------------------------------------
+
+test('Google Voos: URL inclui rota, datas e moeda BRL', () => {
+  const url = buildUrl(cfg, '2026-12-20', '2027-01-05');
+  assert.ok(url.startsWith('https://www.google.com/travel/flights?'));
+  assert.ok(url.includes('curr=BRL'));
+  assert.ok(url.includes('hl=pt-BR'));
+  assert.ok(url.includes('REC'));
+  assert.ok(url.includes('CWB'));
+  assert.ok(url.includes('2026-12-20'));
+  assert.ok(url.includes('2027-01-05'));
+});
+
+test('Google Voos: extrai o menor preco de cada cia e ignora itinerario misto', () => {
+  const parsed = parseGoogleFlightsHtml(fixture('google-flights-results.html'));
+  assert.strictEqual(parsed.latam, 1956);
+  assert.strictEqual(parsed.gol, 2512);
+  assert.strictEqual(parsed.azul, 2666);
+  // 999 era o trecho misto LA+G3; nao pode vencer como menor preco.
+  assert.ok(parsed.latam !== 999);
+  assert.ok(parsed.gol !== 999);
+});
+
+test('Google Voos: HTML sem tarifas devolve objeto vazio', () => {
+  const parsed = parseGoogleFlightsHtml('<html><body>Planeje sua viagem</body></html>');
+  assert.deepStrictEqual(parsed, {});
+});
+
+test('CLI: fonte padrao e google, delay menor que o das cias', () => {
+  const defaults = parseArgs([]);
+  assert.strictEqual(defaults.source, 'google');
+  assert.strictEqual(defaults.delay, 1200);
+  const airlines = parseArgs(['--source=airlines']);
+  assert.strictEqual(airlines.source, 'airlines');
+  assert.strictEqual(airlines.delay, 3000);
+  const custom = parseArgs(['--source=all', '--delay=500', '--quick']);
+  assert.strictEqual(custom.source, 'all');
+  assert.strictEqual(custom.delay, 500);
+  assert.strictEqual(custom.quick, true);
+});
+
+test('CLI: fonte desconhecida da erro claro', () => {
+  assert.throws(() => parseArgs(['--source=skyscanner']), /Fonte desconhecida/);
 });
 
 // --- analise ----------------------------------------------------------
