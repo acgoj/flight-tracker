@@ -7,44 +7,49 @@ milhas**, e apontando quando o preço está bom comparado ao histórico.
 
 ## Como funciona
 
-1. Um scraper por companhia (Playwright) consulta a busca pública de voos:
+1. A coleta **padrão** consulta o **Google Voos** (HTML já com preços, sem
+   login). Uma busca por par de datas devolve a tarifa em R$ da Azul, da
+   GOL e da LATAM. É isso que o GitHub Actions usa — os sites das
+   companhias respondem `Access Denied` (Akamai) a partir de IP de
+   datacenter.
+2. Opcionalmente, um scraper Playwright por companhia tenta a busca
+   pública delas (`--source=airlines`), para dinheiro **e** pontos/milhas:
    - **Azul** → preço em R$ e pontos TudoAzul na mesma tela.
    - **GOL** → preço em R$ no site da GOL, milhas no Smiles.
    - **LATAM** → preço em R$ e pontos LATAM Pass em buscas separadas
      (parâmetro `redemption` na URL).
-2. Cada consulta é salva em `data/history.json` (histórico completo, nunca
+3. Cada consulta é salva em `data/history.json` (histórico completo, nunca
    sobrescrito).
-3. `scripts/build-dashboard.js` lê o histórico e gera um dashboard estático
+4. `scripts/build-dashboard.js` lê o histórico e gera um dashboard estático
    em `docs/index.html`: comparação entre companhias, menor preço em
    dinheiro e em pontos, valor implícito do ponto e melhores combinações de
    datas.
-4. Um workflow do GitHub Actions roda tudo 2x por dia e commita os
-   resultados — na infraestrutura do GitHub, com acesso normal à internet.
+5. Um workflow do GitHub Actions roda tudo 2x por dia e commita os
+   resultados.
 
 ## ⚠️ Aviso importante sobre os scrapers
 
-Este código foi escrito em um ambiente sem acesso à internet real (os sites
-das companhias bloqueiam acesso automatizado de lá), então **nenhum dos três
-scrapers foi testado contra o site real**. A extração de preços é feita por
-padrões de texto (regex sobre "R$ X,XX" e "X pontos/milhas"), que tende a
-ser mais resistente a mudanças de layout do que seletores CSS, mas ainda
-assim precisa ser validada na prática.
+O Google Voos é a fonte de **dinheiro** que funciona no Actions e em
+outros IPs de datacenter. Os sites das companhias (Azul, GOL, LATAM)
+bloqueiam esse tipo de origem com Akamai; o scraper Playwright delas
+serve para quem roda **localmente** e quer tentar pontos/milhas.
 
-Grau de confiança, do mais provável de funcionar para o menos:
+Grau de confiança:
 
-| Companhia | Dinheiro | Pontos | Observação |
+| Fonte | Dinheiro | Pontos | Observação |
 |---|---|---|---|
-| Azul | média | média | Dinheiro e pontos vêm da mesma tela |
-| LATAM | média | média | Formato de URL bem conhecido (`redemption=true/false`) |
-| GOL | baixa | **muito baixa** | URL de compra muda com frequência; **o Smiles normalmente exige login** para mostrar as tabelas boas |
+| Google Voos (`--source=google`, padrão) | alta | — | Uma HTTP GET por par de datas; sem Playwright |
+| Azul direto | baixa (CI) | baixa (CI) | Akamai Access Denied a partir de datacenter |
+| LATAM direto | baixa (CI) | baixa (CI) | Idem, mensagem em espanhol ("motivos de seguridad") |
+| GOL direto | baixa (CI) | **muito baixa** | Mesmo bloqueio; **Smiles normalmente exige login** |
 
 ### Status conhecido
 
-A primeira execução real no GitHub Actions (run #1, só com a Azul) falhou
-nas 23 consultas com "carregou, mas sem preços" — ou seja, **a conexão
-funcionou, mas nenhuma tela de resultado apareceu**. Ainda não sabemos se
-foi deep-link errado, SPA lenta ou bloqueio anti-bot; o diagnóstico abaixo
-foi construído justamente para responder isso na próxima execução.
+As execuções no GitHub Actions contra os sites das cias falhavam todas
+com **bloqueio anti-bot** (Azul/GOL) ou com diagnóstico errado de
+"formulário não encontrado" na LATAM (era o mesmo bloqueio, em espanhol).
+O histórico ficava vazio e o dashboard sem dados. A coleta padrão passou
+a ser o Google Voos.
 
 ### Lendo o diagnóstico
 
@@ -92,12 +97,13 @@ está em 2x/dia) e desative a companhia no config se ela bloquear o acesso.
 
 ```bash
 npm install
-npx playwright install chromium      # baixa o navegador (uma vez)
+npx playwright install chromium      # só se for usar --source=airlines
 
-npm run scrape                        # todas as cias, janelas completas
+npm run scrape                        # Google Voos, janelas completas
 npm run scrape -- --quick             # só o par de datas padrão
 npm run scrape -- --airline=latam     # só uma companhia
-npm run scrape -- --quick --debug     # salva screenshot/html em debug/
+npm run scrape -- --source=airlines   # Playwright nos sites das cias (pontos)
+npm run scrape -- --quick --debug     # salva html em debug/
 
 npm run build-dashboard               # gera docs/index.html
 npm test                              # testes de sanidade
@@ -170,7 +176,8 @@ src/
     index.js               registro das companhias
     base.js                navegador + fluxo comum (URL → fallback → parsing)
     fare-parser.js         extração de preços a partir do texto (testável)
-    azul.js / gol.js / latam.js   definições por companhia
+    google-flights.js      fonte padrao: precos em R$ via Google Voos
+    azul.js / gol.js / latam.js   definicoes por companhia (Playwright)
 scripts/
   run-scrape.js            CLI: roda os scrapers
   add-price.js             CLI: registro manual

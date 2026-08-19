@@ -16,6 +16,11 @@ on:
         type: choice
         default: todas
         options: [todas, azul, gol, latam]
+      source:
+        description: 'Fonte dos precos (google funciona no Actions; airlines = Playwright nas cias)'
+        type: choice
+        default: google
+        options: [google, airlines, all]
 
 permissions:
   contents: write
@@ -30,6 +35,7 @@ jobs:
     env:
       QUICK: ${{ github.event.inputs.quick || 'false' }}
       AIRLINE: ${{ github.event.inputs.airline || 'todas' }}
+      SOURCE: ${{ github.event.inputs.source || 'google' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -42,13 +48,14 @@ jobs:
         run: npm ci
 
       - name: Instalar navegador Chromium
+        if: env.SOURCE == 'airlines' || env.SOURCE == 'all'
         run: npx playwright install --with-deps chromium
 
       - name: Rodar scrapers
         id: scrape
         continue-on-error: true
         run: |
-          ARGS=""
+          ARGS="--source=$SOURCE"
           [ "$QUICK" = "true" ] && ARGS="$ARGS --quick"
           if [ -n "$AIRLINE" ] && [ "$AIRLINE" != "todas" ]; then
             ARGS="$ARGS --airline=$AIRLINE"
